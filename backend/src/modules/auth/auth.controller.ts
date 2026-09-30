@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { registerUser, loginUser } from './auth.service.js';
+import { registerUser, loginUser, refreshAccessToken, getUserById } from './auth.service.js';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 
 export async function register(req: Request, res: Response) {
   try {
@@ -29,5 +30,27 @@ export async function login(req: Request, res: Response) {
     });
   } catch (err: any) {
     res.status(401).json({ error: err.message });
+  }
+}
+
+export async function refresh(req: Request, res: Response) {
+  try {
+    const token = req.cookies.refreshToken;
+    if (!token) {
+      return res.status(401).json({ error: 'No refresh token' });
+    }
+    const accessToken = refreshAccessToken(token);
+    res.status(200).json({ accessToken });
+  } catch (err: any) {
+    res.status(401).json({ error: 'Invalid or expired refresh token' });
+  }
+}
+
+export async function me(req: AuthRequest, res: Response) {
+  try {
+    const user = await getUserById(req.userId as string);
+    res.status(200).json({ id: user.id, email: user.email, name: user.name });
+  } catch (err: any) {
+    res.status(404).json({ error: err.message });
   }
 }

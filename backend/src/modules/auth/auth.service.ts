@@ -38,3 +38,18 @@ export async function loginUser(email: string, password: string) {
 
   return { user, accessToken, refreshToken };
 }
+
+
+export function refreshAccessToken(refreshToken: string) {
+  const payload = jwt.verify(refreshToken, REFRESH_SECRET) as { userId: string };
+  const accessToken = jwt.sign({ userId: payload.userId }, ACCESS_SECRET, { expiresIn: '15m' });
+  return accessToken;
+}
+
+export async function getUserById(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new Error('User not found');
+  }
+  return user;
+}

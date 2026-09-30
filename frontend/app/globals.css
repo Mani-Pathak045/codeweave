@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.yRemoteSelection {
+  background-color: rgba(255, 107, 107, 0.3);
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid #ff6b6b;
+  border-top: 2px solid #ff6b6b;
+  border-bottom: 2px solid #ff6b6b;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.yRemoteSelectionHead::after {
+  content: attr(data-user-name);
+  position: absolute;
+  top: -1.4em;
+  left: -2px;
+  background-color: #ff6b6b;
+  color: white;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+input, textarea, select {
+  background-color: white;
+  color: black;
+  padding: 0.5rem;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+
+button {
+  cursor: pointer;
+}
