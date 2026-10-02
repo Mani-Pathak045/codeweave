@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import authRoutes from './modules/auth/auth.routes.js';
 import { requireAuth, AuthRequest } from './middleware/auth.middleware.js';
 import roomRoutes from './modules/rooms/rooms.routes.js';
+import executionRoutes from './modules/execution/execution.routes.js';
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(cookieParser());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/execution', executionRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

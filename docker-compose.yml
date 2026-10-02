@@ -19,5 +19,75 @@ services:
     ports:
       - "6380:6379"
 
+  # ── Judge0 (self-hosted code execution) ───────────────────────────────────
+  # NOTE: These services are no longer used by the CodeWeave backend.
+  # Code execution is now handled by a custom Docker-based executor in:
+  #   backend/src/modules/execution/execution.service.ts
+  #
+  # Root cause why Judge0 was replaced:
+  #   Judge0 v1.13.1 bundles isolate v1.8.1 (compiled 2021). On WSL2 kernels
+  #   ≥ 5.15 (used by Docker Desktop for Windows), isolate crashes with SIGSEGV
+  #   (signal 11) after setting up bind-mounts but before execve, because the
+  #   behavior of pivot_root() in new PID namespaces changed in modern kernels.
+  #   This is not fixable via cgroup, seccomp, or judge0.conf settings alone.
+  #   The custom executor spawns per-language Docker containers directly, which
+  #   works on all platforms with no isolate dependency.
+  #
+  # These services are kept with `profiles: [judge0]` so they do NOT start
+  # automatically with `docker compose up`. To start them manually:
+  #   docker compose --profile judge0 up -d judge0-postgres judge0-redis judge0-server judge0-workers
+  judge0-postgres:
+    image: postgres:16
+    container_name: judge0-postgres
+    profiles: [judge0]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0pass
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data
+
+  judge0-redis:
+    image: redis:7
+    container_name: judge0-redis
+    profiles: [judge0]
+    restart: unless-stopped
+    volumes:
+      - judge0_redis_data:/data
+
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-server
+    profiles: [judge0]
+    restart: unless-stopped
+    ports:
+      - "2358:2358"
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    cgroup: host
+    privileged: true
+    depends_on:
+      - judge0-postgres
+      - judge0-redis
+    command: ["./scripts/server"]
+
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-workers
+    profiles: [judge0]
+    restart: unless-stopped
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    cgroup: host
+    privileged: true
+    depends_on:
+      - judge0-server
+    command: ["./scripts/workers"]
+
 volumes:
   postgres_data:
+  judge0_postgres_data:
+  judge0_redis_data:

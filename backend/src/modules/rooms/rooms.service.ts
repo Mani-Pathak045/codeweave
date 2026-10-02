@@ -62,3 +62,10 @@ export async function getRoomById(roomId: string) {
 
   return room;
 }
+
+export async function isRoomMember(roomId: string, userId: string): Promise<boolean> {
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId } },
+  });
+  return membership !== null;
+}
