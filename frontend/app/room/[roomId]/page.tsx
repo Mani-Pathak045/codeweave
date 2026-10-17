@@ -21,6 +21,11 @@ interface ExecutionResult {
   judge0Token: string | null;
 }
 
+interface AiResult {
+  requestId: string;
+  output: string;
+}
+
 // Map Monaco editor language identifiers to the names our backend accepts.
 const LANGUAGE_MAP: Record<string, string> = {
   javascript: 'javascript',
@@ -55,6 +60,12 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+
+  // ── AI state ───────────────────────────────────────────────────────────────
+  const [aiResult, setAiResult] = useState<AiResult | null>(null);
+  const [aiLoading, setAiLoading] = useState<'explain' | 'review' | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiPanelTitle, setAiPanelTitle] = useState<string>('');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -176,6 +187,71 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     }
   }, [accessToken, roomId, editorLanguage]);
 
+  // ── AI handlers ────────────────────────────────────────────────────────────
+
+  const handleExplainError = useCallback(async () => {
+    if (!editorRef.current || !accessToken || !result?.stderr) return;
+
+    const code = editorRef.current.getValue();
+    setAiLoading('explain');
+    setAiResult(null);
+    setAiError(null);
+    setAiPanelTitle('Error Explanation');
+
+    try {
+      const res = await fetch(`${API_URL}/api/ai/explain-error`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ roomId, code, stderr: result.stderr }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'AI request failed');
+      setAiResult(data as AiResult);
+    } catch (err: any) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(null);
+    }
+  }, [accessToken, roomId, result]);
+
+  const handleReviewCode = useCallback(async () => {
+    if (!editorRef.current || !accessToken) return;
+
+    const code = editorRef.current.getValue();
+    if (!code.trim()) return;
+
+    const monacoLang = editorRef.current.getModel()?.getLanguageId() ?? editorLanguage;
+    const language = LANGUAGE_MAP[monacoLang] ?? monacoLang;
+
+    setAiLoading('review');
+    setAiResult(null);
+    setAiError(null);
+    setAiPanelTitle('AI Code Review');
+
+    try {
+      const res = await fetch(`${API_URL}/api/ai/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ roomId, code, language }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'AI request failed');
+      setAiResult(data as AiResult);
+    } catch (err: any) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(null);
+    }
+  }, [accessToken, roomId, editorLanguage]);
+
   if (loading || !user) {
     return <div style={{ color: 'white', padding: 40 }}>Loading...</div>;
   }
@@ -187,6 +263,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
       ? '#f87171'   /* red-400 */
       : '#facc15'   /* yellow-400 */
     : '#94a3b8';    /* slate-400 */
+
+  // True while any AI request is in-flight.
+  const isAiLoading = aiLoading !== null;
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
@@ -230,6 +309,28 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               </option>
             ))}
           </select>
+
+          {/* AI Review button — always available when there's code */}
+          <button
+            id="ai-review-btn"
+            onClick={handleReviewCode}
+            disabled={isAiLoading}
+            title="Ask AI to review the current code"
+            style={{
+              background: isAiLoading ? '#1c2333' : '#1c2333',
+              color: isAiLoading ? '#6e7681' : '#a5d6ff',
+              border: '1px solid #30363d',
+              borderRadius: 6,
+              padding: '6px 14px',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: isAiLoading ? 'not-allowed' : 'pointer',
+              transition: 'border-color 0.2s, color 0.2s',
+              letterSpacing: '0.3px',
+            }}
+          >
+            {aiLoading === 'review' ? '✨ Reviewing…' : '✨ AI Review'}
+          </button>
 
           {/* Run button */}
           <button
@@ -311,6 +412,31 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                 {result.status}
               </span>
             )}
+
+            {/* Explain Error button — only when there's stderr from the last run */}
+            {result?.stderr && !isRunning && (
+              <button
+                id="explain-error-btn"
+                onClick={handleExplainError}
+                disabled={isAiLoading}
+                title="Ask AI to explain this error"
+                style={{
+                  marginLeft: 6,
+                  background: isAiLoading ? '#1c0c0c' : '#2d1515',
+                  color: isAiLoading ? '#6e7681' : '#ffa198',
+                  border: '1px solid #4d1212',
+                  borderRadius: 4,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isAiLoading ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                {aiLoading === 'explain' ? '✨ Explaining…' : '✨ Explain Error'}
+              </button>
+            )}
+
             {result && (
               <span style={{ color: '#484f58', fontSize: 11, marginLeft: 'auto' }}>
                 token: {result.judge0Token}
@@ -330,7 +456,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
             {/* Loading spinner */}
             {isRunning && (
               <span style={{ color: '#58a6ff', fontFamily: 'monospace', fontSize: 13 }}>
-                ⏳ Sending to Judge0 sandbox…
+                ⏳ Running in Docker sandbox…
               </span>
             )}
 
@@ -413,6 +539,97 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
             )}
           </div>
         </div>
+
+        {/* ── AI panel — shown when there's an AI result or an in-flight request ── */}
+        {(aiResult || isAiLoading || aiError) && (
+          <div
+            id="ai-panel"
+            style={{
+              background: '#0d1117',
+              borderTop: '2px solid #2a2a3d',
+              minHeight: 120,
+              maxHeight: 260,
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+            }}
+          >
+            {/* AI panel header */}
+            <div
+              style={{
+                padding: '6px 14px',
+                background: '#161b22',
+                borderBottom: '1px solid #2a2a3d',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span style={{ color: '#a5d6ff', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>
+                ✨ {aiPanelTitle || 'AI'}
+              </span>
+              {aiResult && (
+                <button
+                  onClick={() => { setAiResult(null); setAiError(null); }}
+                  style={{
+                    marginLeft: 'auto',
+                    background: 'none',
+                    border: 'none',
+                    color: '#484f58',
+                    fontSize: 16,
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                    padding: '0 4px',
+                  }}
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* AI panel body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '10px 14px' }}>
+              {/* Loading */}
+              {isAiLoading && (
+                <span style={{ color: '#a5d6ff', fontFamily: 'monospace', fontSize: 13 }}>
+                  ✨ Asking Gemini…
+                </span>
+              )}
+
+              {/* Error */}
+              {aiError && !isAiLoading && (
+                <pre
+                  style={{
+                    color: '#f85149',
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    whiteSpace: 'pre-wrap',
+                    margin: 0,
+                  }}
+                >
+                  {aiError}
+                </pre>
+              )}
+
+              {/* AI response */}
+              {aiResult && !isAiLoading && (
+                <pre
+                  style={{
+                    color: '#e6edf3',
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    whiteSpace: 'pre-wrap',
+                    margin: 0,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {aiResult.output}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
